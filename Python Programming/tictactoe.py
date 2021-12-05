@@ -135,6 +135,7 @@ class TicTacToe:
                 self.winner = win_status
                 print(f"Congrats ({self.winner})!")
             elif tie_status:
+                self.winner = "Tie"
                 print("Tie game!")
 
             # reset game.
