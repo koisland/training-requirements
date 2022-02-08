@@ -1,37 +1,78 @@
-# ----- Phantasus RNASeq Visulation in Browser -----
-# library(phantasus)
-
-# servePhantasus(host = "127.0.0.1")
-
-# ----- Examples: Airway and DESeq -----
-library(airway)
+library(recount)
 library(DESeq2)
 library(ggplot2)
 library(dplyr)
 
-data("airway")
-se <- airway
+library(EnhancedVolcano)
+library(msigdbr)
 
-thr_params <- list(pThr = 0.01, logFCThr = 1, baseMeanThr = 20, cpmThr = 1)
-thr_params_df <- as.data.frame(thr_params)
+# ---- Get Data ----
+selected_study <- recount::abstract_search("Pneumolysin")$project
 
-head(assay(se))
-rowData(se)
-colData(se)
+download_study(selected_study)
 
-# pairwise comparison of cell types with treatment
-dds <- DESeqDataSet(se, design = ~ cell + dex)
+rdata_path <- file.path(selected_study, "rse_gene.Rdata")
 
-# run diff. gene expression analysis
+load(rdata_path)
+
+# ---- Original workflow (Human transcriptomic analysis) ----
+# Align reads in paired-end mode to human genome using STAR aligner
+# Mapped data (BAM?) converted to gene counts using HTSeqcount and UCSC annotation
+# DESeq for DEA at every time point comparing infected to untreated samples
+
+# ---- Question ----
+# How do human airway epithelial cells respond to statin/cytolysin challenge?
+# Four different classes from three different patients: vehicle control, only statin, only toxin, and both statin and toxin
+
+# ---- Workflow ----
+sample_types <- c(rep("EtOH_PBS_Control", 3), 
+                  rep("SimvastatinOnly", 2), 
+                  rep("BOTHSimvastatinPLY", 3),
+                  rep("PLY_Only", 3),
+                  "SimvastatinOnly")
+
+rse_gene$condition <- sample_types
+
+
+cnts <- assay(rse_gene)
+exp_metadata <- as.data.frame(colData(rse_gene))
+
+# split based on condition
+dds <- DESeqDataSet(rse_gene, design = ~condition)
+
+# https://www.biostars.org/p/445113/
+# Use rlog to convert counts to log scale.
+# PCA results based on features with highest variance.
+# Linear scale would see mostly high mean features while log scale is inverse.
+
+# Without change to scale, small changes with low counts would dominate
+# ex. A gene with 2 reads == 200% more reads than a gene with 1 reads
+#     A gene with 101 reads == 1% more reads than a gene with 100 reads. 
+rld <- rlog(dds)
+
+plotPCA(rld)
+
 dds <- DESeq(dds)
 
-res <- results(dds)
+timepoints <- c(1, 24, 72)
 
-# select significant genes.
-sigRes <- as.data.frame(res) %>%
-  filter(padj <= thr_params$pThr) %>%
-  filter(abs(log2FoldChange) >= thr_params$logFCThr) %>%
-  filter(baseMean >= thr_params$baseMeanThr)
+for (time in timepoints) {
+  
+}
 
-write.table(thr_params_df, file = "output/airway_sigGenes_thrs_1.csv",  sep = ",")
-write.table(sigRes, file = "output/airway_sigGenes_1.csv", sep = ",", col.names = TRUE, row.names = TRUE)
+# contrast is chr vector where 2nd and 3rd args are numerator and denominator.
+# we want to see relative expression of ctr vs. inf
+res <- results(dds, contrast = c("condition", ))
+
+# scatter plot of log 2 fold changes vs. mean of normalized counts
+# 
+plotMA(res)
+
+# Change times where fold change
+resnorm <- lfcShrink(dds = dds, res = res, type = "normal", coef = 2)
+
+plotMA(resnorm)
+
+resdf <- as.data.frame(resnorm)
+View(resdf)
+# ---- Annotate Report ----
