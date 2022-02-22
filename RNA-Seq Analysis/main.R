@@ -54,12 +54,6 @@ plotPCA(rld)
 
 dds <- DESeq(dds)
 
-timepoints <- c(1, 24, 72)
-
-for (time in timepoints) {
-  
-}
-
 # contrast is chr vector where 2nd and 3rd args are numerator and denominator.
 # we want to see relative expression of ctr vs. inf
 res <- results(dds, contrast = c("condition", ))
