@@ -97,9 +97,11 @@ class TicTacToe:
             grid_copy_p1[row][col] = self.CHARS[self.player_1]
             grid_copy_p2[row][col] = self.CHARS[self.player_2]
 
+            # Immediately break from loop if winning move so not overwritten by suboptimal move.
             # Check available moves and chose move that would win.
             if self.check_win_row_col(grid_copy_p2) or self.check_win_diag(grid_copy_p2):
                 sel_row, sel_col = row, col
+                break
             # Check available moves and block any opponent winning moves.
             elif self.check_win_row_col(grid_copy_p1) or self.check_win_diag(grid_copy_p1):
                 sel_row, sel_col = row, col
