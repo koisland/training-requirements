@@ -1,0 +1,47 @@
+---
+title: "RNA-Seq Analysis of HeLa Cells on Salmonella Typhimurium Infection"
+author: "koisland"
+date: "2/28/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(recount)
+library(DESeq2)
+library(ggplot2)
+library(dplyr)
+library(tibble)
+library(stringr)
+library(plotly)
+
+library(EnhancedVolcano)
+library(msigdbr)
+library(EnsDb.Hsapiens.v86)
+library(clusterProfiler)
+library(enrichR)
+
+selected_study <- "SRP034009"
+download_study(selected_study, outdir = "data")
+
+rdata_path <- file.path("data", "rse_gene.Rdata")
+
+load(rdata_path)
+```
+
+## Study and Data
+The selected study comes from the following paper <https://pubmed.ncbi.nlm.nih.gov/25146723/>
+
+```{r data, echo=FALSE}
+rse_gene
+```
+## Question
+
+```{r pressure, echo=FALSE}
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+## Workflow

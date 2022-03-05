@@ -2,71 +2,146 @@ library(recount)
 library(DESeq2)
 library(ggplot2)
 library(dplyr)
+library(tibble)
+library(stringr)
 
 library(EnhancedVolcano)
 library(msigdbr)
+library(EnsDb.Hsapiens.v86)
+library(clusterProfiler)
+library(enrichR)
 
-# ---- Get Data ----
-selected_study <- recount::abstract_search("Pneumolysin")$project
+# ---- Data ----
 
-download_study(selected_study)
+# Two groups: HeLa Ctrl and HeLa Salmonella infected MOI 100 (20 hours post-infection)
+# Three biological replicates each
 
-rdata_path <- file.path(selected_study, "rse_gene.Rdata")
+selected_study <- "SRP034009"
+download_study(selected_study, outdir = "data")
+
+rdata_path <- file.path("data", "rse_gene.Rdata")
 
 load(rdata_path)
 
-# ---- Original workflow (Human transcriptomic analysis) ----
-# Align reads in paired-end mode to human genome using STAR aligner
-# Mapped data (BAM?) converted to gene counts using HTSeqcount and UCSC annotation
-# DESeq for DEA at every time point comparing infected to untreated samples
-
 # ---- Question ----
-# How do human airway epithelial cells respond to statin/cytolysin challenge?
-# Four different classes from three different patients: vehicle control, only statin, only toxin, and both statin and toxin
+# Salmonella infection least efficient in G1-arrested cells. Cyclin D1 promotes transition from G1 to S.
+# miR-15 family of miRNAs decrease cyclin D1 activity.
+# miR-15 miRNAs are downregulated on Salmonella infection.
+# What genes are enriched by Salmonella infection and what miR-15 miRNA are downregulated?
 
 # ---- Workflow ----
-sample_types <- c(rep("EtOH_PBS_Control", 3), 
-                  rep("SimvastatinOnly", 2), 
-                  rep("BOTHSimvastatinPLY", 3),
-                  rep("PLY_Only", 3),
-                  "SimvastatinOnly")
-
-rse_gene$condition <- sample_types
-
-
+rse_gene$condition <- c(rep("HeLaCtrl", 3), 
+                        rep("HeLaInfected", 3))
 cnts <- assay(rse_gene)
 exp_metadata <- as.data.frame(colData(rse_gene))
 
-# split based on condition
+# split based on conditions and remove low-count genes
 dds <- DESeqDataSet(rse_gene, design = ~condition)
+dds <- dds[rowSums(counts(dds)) >= 25]
 
 # https://www.biostars.org/p/445113/
-# Use rlog to convert counts to log scale.
+# Use rlog to convert counts to log scale for visualization purposes.
 # PCA results based on features with highest variance.
 # Linear scale would see mostly high mean features while log scale is inverse.
 
 # Without change to scale, small changes with low counts would dominate
 # ex. A gene with 2 reads == 200% more reads than a gene with 1 reads
 #     A gene with 101 reads == 1% more reads than a gene with 100 reads. 
-rld <- rlog(dds)
+rld <- rlog(dds, blind = TRUE)
 
-plotPCA(rld)
+# QC: PCA plot to see if clustering by some factor (could be group, sex, etc.)
+# Condition explains variance in PC1
+plotPCA(rld, intgroup = "condition")
 
 dds <- DESeq(dds)
 
 # contrast is chr vector where 2nd and 3rd args are numerator and denominator.
-# we want to see relative expression of ctr vs. inf
-res <- results(dds, contrast = c("condition", ))
+# we want to see relative expression of Inf. vs. Ctrl
+res <- results(dds, 
+               contrast = c("condition", "HeLaInfected", "HeLaCtrl"), 
+               parallel = TRUE)
 
 # scatter plot of log 2 fold changes vs. mean of normalized counts
-# 
-plotMA(res)
+# How does fold change relate to how much gene is expressed.
+# Variance at low cnts can be extreme
+DESeq2::plotMA(res)
 
-# Change times where fold change
+# Shrink fold change
+# coef = 2 is the second item of resultsNames(dds)
 resnorm <- lfcShrink(dds = dds, res = res, type = "normal", coef = 2)
 
-plotMA(resnorm)
+DESeq2::plotMA(resnorm)
 
 resdf <- as.data.frame(resnorm)
 View(resdf)
-# ---- Annotate Report ----
+
+# ---- Annotate Results ----
+ens2sym <- AnnotationDbi::select(EnsDb.Hsapiens.v86, keys = keys(EnsDb.Hsapiens.v86),
+                                 columns = c("SYMBOL"))
+
+resdf <- resdf %>% 
+  rownames_to_column(var = "ENSID") %>%
+  mutate(GENEID = gsub(ENSID, pattern = "\\..+", replacement = "")) %>%
+  dplyr::select(-ENSID) %>%
+  inner_join(y = ens2sym, by = "GENEID")
+
+# ---- Volcano Plot ----
+EnhancedVolcano(resdf, lab = resdf$SYMBOL, 
+                pCutoff = 1e-100, FCcutoff = 3,
+                x = "log2FoldChange", y = "padj")
+
+# ---- Heatmap of overexpressed and underexpressed ----
+
+# ---- Over representation Analysis ----
+# Not the best since only uses padj and logfoldchange to determine expression levels
+# p cutoff is arbitrary and can be inflated based on total number of genes over/under expressed
+over_expressed_genes <- resdf %>% 
+  dplyr::filter(padj < 0.01 & log2FoldChange > 2) 
+
+over_expressed_genes %>%
+  write_csv(file = "output/overexpressed_gene.csv")
+
+under_expressed_genes <- resdf %>% 
+  dplyr::filter(padj < 0.01 & log2FoldChange < -2) 
+
+resdf %>%
+  write_csv(file = "output/underexpressed_gene.csv")
+
+dbs <- listEnrichrDbs()
+
+if (!is.null(dbs)){
+  # Get recent gene ontology dbs
+  go_recent_3 <- dbs %>% 
+    dplyr::filter(startsWith(libraryName, "GO")) %>% 
+    # In group of 3s
+    dplyr::select(libraryName) %>% slice(n():(n()-2)) %>%
+    unlist(go_recent_3) %>% as.vector()
+  
+  upreg_bio_processes <- enrichr(over_expressed_genes$SYMBOL, go_recent_3[3])[[go_recent_3[3]]] %>%
+    dplyr::filter(Adjusted.P.value < 0.05)
+  upreg_mol_functions <- enrichr(over_expressed_genes$SYMBOL, go_recent_3[1])[[go_recent_3[1]]] %>%
+    dplyr::filter(Adjusted.P.value < 0.05)
+  upreg_cell_components <- enrichr(over_expressed_genes$SYMBOL, go_recent_3[2])[[go_recent_3[2]]] %>%
+    dplyr::filter(Adjusted.P.value < 0.05)
+  
+  dreg_bio_processes <- enrichr(under_expressed_genes$SYMBOL, go_recent_3[3])[[go_recent_3[3]]] %>%
+    dplyr::filter(Adjusted.P.value < 0.05)
+  dreg_mol_functions <- enrichr(under_expressed_genes$SYMBOL, go_recent_3[1])[[go_recent_3[1]]] %>%
+    dplyr::filter(Adjusted.P.value < 0.05)
+  dreg_cell_components <- enrichr(under_expressed_genes$SYMBOL, go_recent_3[2])[[go_recent_3[2]]] %>%
+    dplyr::filter(Adjusted.P.value < 0.05)
+  
+  upreg_enrich_plots <- lapply(list(upreg_bio_processes, upreg_mol_functions, upreg_cell_components), plotEnrich)
+  
+}
+
+# Gene Set Enrichment Analysis
+resdf2 <- resdf %>%
+  arrange(padj) %>%
+  mutate(padj = case_when(padj == 0 ~ .Machine$double.xmin,
+                          TRUE ~ padj)) %>%
+  mutate(gsea_metric = -log10(padj) * sign(log2FoldChange)) %>%
+  dplyr::filter(!is.na(gsea_metric)) 
+  
+
+# Fig 3a
