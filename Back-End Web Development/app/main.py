@@ -1,9 +1,8 @@
-import json
 from fastapi import FastAPI, Request, HTTPException
 from databases import Database
 
-
-db = Database("sqlite:///data/gapminder.db")
+# On docker change to build/data/gapminder.db
+db = Database("sqlite://../data/gapminder.db")
 
 app = FastAPI()
 
@@ -77,8 +76,10 @@ async def construct_sql(params):
             if len(split_col) == 2:
                 # Construct SQL condition. colname and cond are safe since must be in above dicts. val sanitized below.
                 # Get the condition if in listed conditions. Otherwise, =.
-                # TODO: Check if condtion make sense for col.
-                param_q[colname] = f'[{DB_COLS[colname]}] {Q_COND.get(split_col[1], "=")} :{colname}'
+                # Check if condtion make sense for col (if not numeric, can only use eq or ne).
+                cond_op = (Q_COND.get(split_col[1], "=") if num_val
+                           else {"eq": "=", "ne": "!="}.get(split_col[1], "="))
+                param_q[colname] = f'[{DB_COLS[colname]}] {cond_op} :{colname}'
             else:
                 param_q[colname] = f'[{DB_COLS[colname]}] = :{colname}'
         else:
@@ -92,23 +93,41 @@ async def country(request: Request):
     params = request.query_params
     param_q, new_params = await construct_sql(params)
 
-    query = f"SELECT [Country Name] FROM gapminder WHERE {' AND '.join(param_q.values())}"
-    res = await db.fetch_all(query=query, values=new_params)
+    query = f"SELECT DISTINCT [Country Name] FROM gapminder WHERE {' AND '.join(param_q.values())}"
+    try:
+        res = await db.fetch_all(query=query, values=new_params)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Invalid query. {query}")
+    return {"countries": [r[0] for r in res]}
 
-    return {"countries": res}
+
+# @app.get("/api/test")
+# async def test(request: Request):
+#     query = "ALTER TABLE gapminder DROP COLUMN [Unnamed: 0]"
+#     await db.execute(query=query)
+#     cols = await db.fetch_all(query="SELECT sql FROM sqlite_schema WHERE name = 'gapminder'")
+#     return {"status": cols}
 
 
 @app.get("/api/gapminder")
 async def gapminder(request: Request):
     params = request.query_params
-    param_q, new_params = await construct_sql(params)
-
-    query = f"SELECT * FROM gapminder WHERE {' AND '.join(param_q.values())}"
-    res = await db.fetch_all(query=query, values=new_params)
+    if len(params) > 0:
+        param_q, new_params = await construct_sql(params)
+        query = f"SELECT * FROM gapminder WHERE {' AND '.join(param_q.values())}"
+    else:
+        new_params = None
+        query = f"SELECT * FROM gapminder"
+    try:
+        if not new_params:
+            res = await db.fetch_all(query=query)
+        else:
+            res = await db.fetch_all(query=query, values=new_params)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Invalid query. {query}")
 
     # Convert row object to list of dict and dump as json.
-    return json.dumps([dict(row) for row in res])
-
+    return {"res": res}
 
 # To run:
 # uvicorn main:app --reload
