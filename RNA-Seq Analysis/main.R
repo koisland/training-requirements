@@ -16,12 +16,12 @@ library(enrichR)
 # Two groups: HeLa Ctrl and HeLa Salmonella infected MOI 100 (20 hours post-infection)
 # Three biological replicates each
 
-selected_study <- "SRP034009"
-download_study(selected_study, outdir = "data")
+SELECTED_STUDY <- "SRP034009"
+download_study(SELECTED_STUDY, outdir = "data")
 
-rdata_path <- file.path("data", "rse_gene.Rdata")
+RDATA_PATH <- file.path("data", "rse_gene.Rdata")
 
-load(rdata_path)
+load(RDATA_PATH)
 
 # ---- Question ----
 # Salmonella infection least efficient in G1-arrested cells. Cyclin D1 promotes transition from G1 to S.
@@ -40,9 +40,10 @@ dds <- DESeqDataSet(rse_gene, design = ~condition)
 dds <- dds[rowSums(counts(dds)) >= 25]
 
 # https://www.biostars.org/p/445113/
-# Use rlog to convert counts to log scale for visualization purposes.
+# Use rlog to convert counts to regularized log scale for visualization purposes.
 # PCA results based on features with highest variance.
 # Linear scale would see mostly high mean features while log scale is inverse.
+# Find balance based on library size.
 
 # Without change to scale, small changes with low counts would dominate
 # ex. A gene with 2 reads == 200% more reads than a gene with 1 reads
@@ -51,7 +52,9 @@ rld <- rlog(dds, blind = TRUE)
 
 # QC: PCA plot to see if clustering by some factor (could be group, sex, etc.)
 # Condition explains variance in PC1
-plotPCA(rld, intgroup = "condition")
+plot_pca_qc <- plotPCA(rld, intgroup = "condition")
+
+ggsave(file.path("output", "plot_pca_qc.png"), plot = plot_pca_qc)
 
 dds <- DESeq(dds)
 
@@ -64,13 +67,14 @@ res <- results(dds,
 # scatter plot of log 2 fold changes vs. mean of normalized counts
 # How does fold change relate to how much gene is expressed.
 # Variance at low cnts can be extreme
-DESeq2::plotMA(res)
+plot_ma_origfc <- DESeq2::plotMA(res)
 
-# Shrink fold change
+# Shrink fold change - creates prior distribution of lfcs from genes with high counts. filters noise from low count genes.
+# https://support.bioconductor.org/p/77461/#77466
 # coef = 2 is the second item of resultsNames(dds)
 resnorm <- lfcShrink(dds = dds, res = res, type = "normal", coef = 2)
 
-DESeq2::plotMA(resnorm)
+plot_ma_shkfc <- DESeq2::plotMA(resnorm)
 
 resdf <- as.data.frame(resnorm)
 View(resdf)
@@ -86,9 +90,9 @@ resdf <- resdf %>%
   inner_join(y = ens2sym, by = "GENEID")
 
 # ---- Volcano Plot ----
-EnhancedVolcano(resdf, lab = resdf$SYMBOL, 
-                pCutoff = 1e-100, FCcutoff = 3,
-                x = "log2FoldChange", y = "padj")
+plot_volcano <- EnhancedVolcano(resdf, lab = resdf$SYMBOL, 
+                                pCutoff = 1e-100, FCcutoff = 3,
+                                x = "log2FoldChange", y = "padj")
 
 # ---- Heatmap of overexpressed and underexpressed ----
 
@@ -96,52 +100,46 @@ EnhancedVolcano(resdf, lab = resdf$SYMBOL,
 # Not the best since only uses padj and logfoldchange to determine expression levels
 # p cutoff is arbitrary and can be inflated based on total number of genes over/under expressed
 over_expressed_genes <- resdf %>% 
-  dplyr::filter(padj < 0.01 & log2FoldChange > 2) 
-
-over_expressed_genes %>%
-  write_csv(file = "output/overexpressed_gene.csv")
+  dplyr::filter(padj < 0.01 & log2FoldChange > 2) %>%
+  pull(SYMBOL)
 
 under_expressed_genes <- resdf %>% 
-  dplyr::filter(padj < 0.01 & log2FoldChange < -2) 
+  dplyr::filter(padj < 0.01 & log2FoldChange < -2)%>%
+  pull(SYMBOL)
 
-resdf %>%
-  write_csv(file = "output/underexpressed_gene.csv")
+# category C5 includes GO gene sets.
+# gene set: gene
+gene_sets <- msigdbr(species = "Homo sapiens", category = "C5") %>%
+  dplyr::select(gs_name, gene_symbol)
 
-dbs <- listEnrichrDbs()
+egmt <- enricher(gene = over_expressed_genes, TERM2GENE = gene_sets)
 
-if (!is.null(dbs)){
-  # Get recent gene ontology dbs
-  go_recent_3 <- dbs %>% 
-    dplyr::filter(startsWith(libraryName, "GO")) %>% 
-    # In group of 3s
-    dplyr::select(libraryName) %>% slice(n():(n()-2)) %>%
-    unlist(go_recent_3) %>% as.vector()
-  
-  upreg_bio_processes <- enrichr(over_expressed_genes$SYMBOL, go_recent_3[3])[[go_recent_3[3]]] %>%
-    dplyr::filter(Adjusted.P.value < 0.05)
-  upreg_mol_functions <- enrichr(over_expressed_genes$SYMBOL, go_recent_3[1])[[go_recent_3[1]]] %>%
-    dplyr::filter(Adjusted.P.value < 0.05)
-  upreg_cell_components <- enrichr(over_expressed_genes$SYMBOL, go_recent_3[2])[[go_recent_3[2]]] %>%
-    dplyr::filter(Adjusted.P.value < 0.05)
-  
-  dreg_bio_processes <- enrichr(under_expressed_genes$SYMBOL, go_recent_3[3])[[go_recent_3[3]]] %>%
-    dplyr::filter(Adjusted.P.value < 0.05)
-  dreg_mol_functions <- enrichr(under_expressed_genes$SYMBOL, go_recent_3[1])[[go_recent_3[1]]] %>%
-    dplyr::filter(Adjusted.P.value < 0.05)
-  dreg_cell_components <- enrichr(under_expressed_genes$SYMBOL, go_recent_3[2])[[go_recent_3[2]]] %>%
-    dplyr::filter(Adjusted.P.value < 0.05)
-  
-  upreg_enrich_plots <- lapply(list(upreg_bio_processes, upreg_mol_functions, upreg_cell_components), plotEnrich)
-  
-}
+edf <- as.data.frame(egmt)
+
 
 # Gene Set Enrichment Analysis
 resdf2 <- resdf %>%
   arrange(padj) %>%
+  # handle inf when taking logs by choosing lowest possible value instead of 0.
   mutate(padj = case_when(padj == 0 ~ .Machine$double.xmin,
                           TRUE ~ padj)) %>%
+  # calculate gsea metric
   mutate(gsea_metric = -log10(padj) * sign(log2FoldChange)) %>%
-  dplyr::filter(!is.na(gsea_metric)) 
+  dplyr::filter(!is.na(gsea_metric)) %>%
+  # Order by GSEA
+  arrange(desc(gsea_metric))
   
+hist(resdf2$gsea_metric, breaks = 100)
+
+ranks <- resdf2 %>%
+  select(SYMBOL, gsea_metric) %>%
+  distinct(SYMBOL, .keep_all = TRUE) %>%
+  deframe()
+
+gseas_res <- GSEA(geneList = ranks,
+                  TERM2GENE = gene_sets)
+
+gsea_res_df <- as.data.fram(gsea_res)
+
 
 # Fig 3a

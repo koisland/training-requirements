@@ -6,15 +6,12 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-
 library(recount)
 library(DESeq2)
 library(ggplot2)
 library(dplyr)
 library(tibble)
 library(stringr)
-library(plotly)
 
 library(EnhancedVolcano)
 library(msigdbr)
@@ -22,26 +19,88 @@ library(EnsDb.Hsapiens.v86)
 library(clusterProfiler)
 library(enrichR)
 
-selected_study <- "SRP034009"
-download_study(selected_study, outdir = "data")
+# ---- Data ----
 
-rdata_path <- file.path("data", "rse_gene.Rdata")
+# Two groups: HeLa Ctrl and HeLa Salmonella infected MOI 100 (20 hours post-infection)
+# Three biological replicates each
 
-load(rdata_path)
+SELECTED_STUDY <- "SRP034009"
+download_study(SELECTED_STUDY, outdir = "data")
+
+RDATA_PATH <- file.path("data", "rse_gene.Rdata")
+
+load(RDATA_PATH)
 ```
 
-## Study and Data
-The selected study comes from the following paper <https://pubmed.ncbi.nlm.nih.gov/25146723/>
+## Table of Contents <a name="tblContents"></a>
+* [Study and Data](#studyData)
+* [Question](#question)
+* [Workflow](#workflow)
+  * [Preprocessing](#preprocess)
+  * [QC](#qc)
+  * [DGE with DESeq](#deseq)
+*
 
-```{r data, echo=FALSE}
-rse_gene
+## Study and Data <a name="studyData"></a>
+The following analysis comes from a *Nature Communications* paper, *Functional high-throughput screening identifies the miR-15 microRNA family as cellular restriction factors for Salmonella infection*.<sup>1</sup>
+
+Data was retrieved as a `RangedSummarizedExperiment` object via an `rse_gene.Rdata` file downloaded by the `recount` R package.<sup>2</sup>
+
+## Question <a name="question"></a>
+Here we ask **what genes are enriched by Salmonella infection** and of those, **which are miR-15 microRNA related genes**?
+
+## Workflow <a name="workflow"></a>
+
+### Preprocessing <a name="preprocess"></a>
+We first begin by labeling our 6 biological replicates based on their conditions.
+* HeLaCtrl
+* HeLaInfected
+
+```{r labeling, echo=FALSE}
+rse_gene$condition <- c(rep("HeLaCtrl", 3), 
+                        rep("HeLaInfected", 3))
 ```
-## Question
 
-```{r pressure, echo=FALSE}
-
+After, we create the `DESeqDataSet` and remove low-count genes with a 25 count cutoff.
+```{r dds_filt, echo=FALSE}
+dds <- DESeqDataSet(rse_gene, design = ~condition)
+dds <- dds[rowSums(counts(dds)) >= 25]
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+### Quality Check <a name="qc"></a>
+To visualize our data, we'll convert out counts to a regularized log scale and plot a PCA plot.
 
-## Workflow
+This conversion is important as PCA is a variance based analysis. Without regularization, linear and log scales will see dominance of high mean and low mean genes, respectively. <sup>3</sup>
+
+```{r pca_qc, echo=FALSE}
+rld <- rlog(dds, blind = TRUE)
+
+plot_pca_qc <- plotPCA(rld, intgroup = "condition")
+```
+
+Our output plot looks good. Condition appears to explain the variance in the first principal component.
+
+![]("output/plot_pca_qc.png")
+
+### Differential Expression Analysis <a name="desq"></a>
+Next, we perform differential expression analysis by passing our `dds` to `DESeq` and extract our results with the `results` function.
+
+The contrast argument is important as it provides the formula for calculating the log2 fold change of our results table.
+
+In our case, we are comparing the log2 fold change of the HeLaInfected condition over the HeLaCtrl condition. `i.e. log2(HeLaInfected / HeLaCtrl)` <sup>4</sup>
+
+```{r deseq, echo=FALSE}
+dds <- DESeq(dds)
+
+res <- results(dds, 
+               contrast = c("condition", "HeLaInfected", "HeLaCtrl"), 
+               parallel = TRUE)
+```
+
+
+
+## Citations
+1.
+2.
+3. https://www.biostars.org/p/445113/
+4. https://rdrr.io/bioc/DESeq2/man/results.html
