@@ -1,10 +1,8 @@
 # Basic Data Science Web Development
 
-**This challenge can be completed using `R-Shiny` OR `plotly-dash`**
+Pre-requisites (if using `python`): [Python Programming](https://github.com/Bioinformatics-Research-Network/training-requirements/tree/main/Python%20Programming) and [Python for Data Science](https://github.com/Bioinformatics-Research-Network/training-requirements/tree/main/Python%20for%20Data%20Science)
 
-Suggested pre-requisites (if using `python`): [Python Programming](https://github.com/Bioinformatics-Research-Network/training-requirements/tree/main/Python%20Programming) and [Python for Data Science](https://github.com/Bioinformatics-Research-Network/training-requirements/tree/main/Python%20for%20Data%20Science)
-
-Suggested pre-requisites (if using `R`): [R Programming](https://github.com/Bioinformatics-Research-Network/training-requirements/tree/main/R%20Programming) and [R for Data Science](https://github.com/Bioinformatics-Research-Network/training-requirements/tree/main/R%20for%20Data%20Science)
+Pre-requisites (if using `R`): [R Programming](https://github.com/Bioinformatics-Research-Network/training-requirements/tree/main/R%20Programming) and [R for Data Science](https://github.com/Bioinformatics-Research-Network/training-requirements/tree/main/R%20for%20Data%20Science)
 
 Create and deploy a `dash` (or `shiny`) application for exploring the gapminder dataset:
 
@@ -15,7 +13,7 @@ Create and deploy a `dash` (or `shiny`) application for exploring the gapminder 
 - Change the data type displayed in the plot
 - Change the year being shown
 4. Improve the layout and UI so that it is easy and relatively intuitive to use
-5. Deploy your app (using a free account) to `Heroku` and send Henry the link. 
+5. Deploy your app (using a free account) to `Heroku` or shinyapps.io and send Henry the link. 
 
 Here is an example of a `dash` app: https://dash-app-test-hm.herokuapp.com/
 
