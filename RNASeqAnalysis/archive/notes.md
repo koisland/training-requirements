@@ -2,11 +2,11 @@
 * Quantify expression of coding sequences.
 * Exons usually. Intron/promoter regions ignored.
 
-## Data Structure 
+## Data Structure
 * One observation
 	* Gene ID
 	* Sample Name
-	* Seq Read Counts 
+	* Seq Read Counts
 
 ## Workflow
 1. Data transformation
@@ -20,7 +20,7 @@
 	* Adjusted p-value thresholds
 * `logFCThr`
 	* Log2 fold-change
-* `baseMeanThr` 
+* `baseMeanThr`
 	* Minimum average expression level in counts
 * `cpmThr`
 	* Copy-per-million threshold
@@ -37,7 +37,7 @@
 			* `~ dex`
 				* Is there a difference between treatments
 
-## DESEq (`DESeq`) 
+## DESEq (`DESeq`)
 * Output DESeq analysis
 * Uses [Benjamini-Hochberg](https://www.statisticshowto.com/benjamini-hochberg-procedure/) to reduce FP rate to get `pAdj`
 

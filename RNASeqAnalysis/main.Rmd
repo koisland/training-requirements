@@ -1,0 +1,122 @@
+---
+title: "training-requirements: RNA Seq Analysis"
+output:
+  html_document:
+    fig_caption: yes
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+---
+This document describes the steps of an RNA Seq analysis.
+
+Based on the workshop performed in [Week 8 of BigBioinformatics R Programming and RNA-Seq Analysis](https://www.bigbioinformatics.org/r-and-rnaseq-analysis).
+
+```{r, include=FALSE}
+library(dplyr)
+```
+
+### Data and Analysis Scope
+We'll first start by reading in our counts stored as a `RangedSummarizedExperiment` object.
+```{r, echo=FALSE}
+rse <- readRDS("EwS.rds")
+```
+
+Checking our sample metadata, we have two sample conditions: A EF1 knockdown and our control.
+```{r, echo=FALSE}
+cd <- as.data.frame(
+  SummarizedExperiment::colData(rse)
+)
+testit::assert("condition" %in% colnames(cd))
+testit::assert(unique(cd$condition) == c("shCTR", "shEF1"))
+```
+
+
+Ultimately, we want to know what effects knocking down the [EWSR1-FLI1 oncogene](https://en.wikipedia.org/wiki/EWS/FLI) will have on the transcriptome of Ewing sarcoma tumor cells.
+
+### DESeq Dataset
+We'll now construct our `DESeqDataSet` separating our data by the column `condition`.
+```{r, echo=FALSE}
+deseq_dataset <- DESeq2::DESeqDataSet(rse, design = ~condition)
+```
+
+### QC
+Next, we check whether our data showns any sign of batch effects.
+
+This is accomplished by:
+
+1. Log transforming the counts.
+
+    * Use `rlog` to convert counts to regularized log scale for visualization.
+    * PCA results based on features with highest variance.
+
+      * On linear scale, high mean features dominate.
+      * On log scale. small changes with low counts would dominate
+
+        ```
+        A gene with 2 reads == 200% more reads than a gene with 1 reads
+        A gene with 101 reads == 1% more reads than a gene with 100 reads.
+        ```
+
+2. Performing PCA on the log transformed matrix of counts.
+
+```{r, echo=FALSE}
+pca <- DESeq2::rlog(deseq_dataset) %>% BiocGenerics::plotPCA()
+pca
+```
+
+From this plot, we can see that the first PC (PC1) cleanly splits samples by our sample conditions.
+
+* Because of this we know that the conditions explain the most variance.
+* This gives us good confidence that any changes we observe in our analysis are due to our conditions rather than any technical variation.
+
+### DE Analysis
+Now we perform the differential expression analysis.
+
+And get our results showing relative change in expression of the knockdown compared to the control.
+
+* `contrast` is a chr vector where 2nd and 3rd args are the numerator and denominator.
+
+```{r, echo=FALSE}
+dds <- DESeq2::DESeq(deseq_dataset)
+res <- DESeq2::results(dds, contrast = c("condition", "shEF1", "shCTR"))
+```
+
+Next, we plot an MA plot.
+* This shows the log2 fold changes attributable to a given variable over the mean of normalized counts for all the samples in the DESeqDataSet.^3^
+* Answers question:
+> How does fold change relate to how much gene is expressed.
+
+First, we have to shrink the fold change of low count genes as shifts in variance can be extreme.
+```{r, echo=FALSE, fig.cap="Spurious Log Fold Changes at Low Count Genes"}
+plot_ma_origfc <- DESeq2::plotMA(res)
+plot_ma_origfc
+```
+
+By shrinking the fold change: ^4^
+* creates prior distribution of lfcs from genes with high counts.
+* filters noise from low count genes.
+```{r, echo=FALSE}
+# coef = 2 is the second item of resultsNames(dds)
+res_shrunkfc <- DESeq2::lfcShrink(
+  dds = dds,
+  res = res,
+  type = "normal",
+  coef = 2
+)
+```
+
+After lfc shrinkage, the points with spurious fold changes are moved toward the center.
+```{r, echo=FALSE, fig.cap="Adjusted Log Fold Change"}
+plot_ma_shrunkfc <- DESeq2::plotMA(res_shrunkfc)
+plot_ma_shrunkfc
+```
+
+### Annotation
+WIP
+
+### Sources
+1. https://www.bigbioinformatics.org/r-and-rnaseq-analysis
+2. https://www.biostars.org/p/445113/
+3. http://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html
+4. https://support.bioconductor.org/p/77461/#77466

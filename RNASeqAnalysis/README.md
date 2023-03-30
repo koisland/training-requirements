@@ -4,7 +4,7 @@ Pre-requisites: [R Programming](https://github.com/Bioinformatics-Research-Netwo
 
 ## Overview
 
-The purpose of this challenge is to complete a full differential gene expression analysis, generating the relevant figures and tables which should accompany it. It should be formatted in an aesthetic way that is easy to follow. 
+The purpose of this challenge is to complete a full differential gene expression analysis, generating the relevant figures and tables which should accompany it. It should be formatted in an aesthetic way that is easy to follow.
 
 ### The data: Ewing sarcoma RNA-seq
 
@@ -91,4 +91,3 @@ Here are the R packages that are likely to be useful in completing this task:
 1. BIG Club’s RNA-Seq workshop (goes through all the required tasks in weeks 6-9): https://www.bigbioinformatics.org/r-and-rnaseq-analysis
 2. Bioconductor RNA-Seq tutorial: https://bioconductor.org/packages/release/workflows/html/rnaseqGene.html
 3. DataCamp RNA-Seq tutorial: https://learn.datacamp.com/courses/rna-seq-with-bioconductor-in-r
-
