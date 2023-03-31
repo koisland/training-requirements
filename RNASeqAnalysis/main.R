@@ -1,7 +1,5 @@
 library(dplyr)
 library(ggplot2)
-library(EnsDb.Hsapiens.v86)
-library(EnhancedVolcano)
 
 p_thr <- 0.01
 log_fold_change_thr <- 2
@@ -78,7 +76,8 @@ annotate_deseq_res <- function(resdf) {
 resdf <- as.data.frame(res_shrunkfc) %>% annotate_deseq_res()
 
 # (4)
-plot_volcano <- EnhancedVolcano(
+# Visual identification of genes with large fold changes that are significant.
+plot_volcano <- EnhancedVolcano::EnhancedVolcano(
   resdf,
   lab = resdf$SYMBOL,
   pCutoff = 1e-100,
@@ -108,3 +107,42 @@ resdf_top_de_genes <- resdf_de_genes %>%
   dplyr::filter(
     between(rank, 1, 10) | between(rank, num_de_genes - 9, num_de_genes)
   )
+
+# (5)
+plot_top_de_genes <- ggplot2::ggplot(
+  resdf_top_de_genes,
+  ggplot2::aes(
+    x = log2FoldChange,
+    y = SYMBOL,
+    fill = type,
+    label = sprintf("%0.2f", round(log2FoldChange, digits = 2))
+  )
+) +
+  ggplot2::ggtitle("Top 10 Differentially Expressed Genes") +
+  ggplot2::geom_bar(stat = "identity") +
+  ggplot2::geom_text(vjust = "center") +
+  ggplot2::theme_classic()
+
+# Get over and under expressed genes.
+overexp_genes <- resdf_de_genes %>%
+  dplyr::filter(type == "overexpressed") %>%
+  dplyr::pull(SYMBOL)
+
+underexp_genes <- resdf_de_genes %>%
+  dplyr::filter(type == "underexpressed") %>%
+  dplyr::pull(SYMBOL)
+
+# Get gene sets from H. sapiens
+# Select the gene set name and the gene symbol.
+gene_sets <- msigdbr::msigdbr(species = "Homo sapiens", category = "C5") %>%
+  dplyr::select(gs_name, gene_symbol)
+
+egmt <- clusterProfiler::enricher(
+  gene = overexp_genes,
+  TERM2GENE = gene_sets
+)
+
+edf <- as.data.frame(egmt)
+
+clusterProfiler::dotplot(egmt)
+barplot(egmt)
